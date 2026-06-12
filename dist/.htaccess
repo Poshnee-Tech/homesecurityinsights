@@ -6,6 +6,14 @@
 Options -Indexes -ExecCGI -Includes
 ServerSignature Off
 
+# ── Explicit MIME types ───────────────────────────────────
+# Forces Apache to serve these types correctly regardless of
+# the server's global mime.types configuration.
+AddType application/javascript .js
+AddType text/css               .css
+AddType image/svg+xml          .svg
+AddType text/html              .html
+
 # Serve the non-obvious entry file as the directory default
 DirectoryIndex portal.html
 
