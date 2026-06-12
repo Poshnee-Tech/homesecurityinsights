@@ -35,7 +35,7 @@ function securePlugin() {
       // Only add crossorigin if not already present
       const xo = (tag) => tag.includes('crossorigin') ? '' : ' crossorigin="anonymous"'
 
-      // Inject integrity into <link rel="stylesheet" href="/assets/...">
+      // Inject integrity into any <link rel="stylesheet" href="/assets/...css">
       html = html.replace(/<link\b[^>]*href="(\/assets\/[^"]+\.css)"[^>]*\/?>/g, tag => {
         if (tag.includes('integrity=')) return tag
         const m = tag.match(/href="(\/assets\/[^"]+\.css)"/)
@@ -45,7 +45,7 @@ function securePlugin() {
         return tag.replace(/(\/?>)$/, ` integrity="${hash}"${xo(tag)}$1`)
       })
 
-      // Inject integrity into <script src="/assets/...">
+      // Inject integrity into any <script src="/assets/...js"> (module or classic)
       html = html.replace(/<script\b[^>]*src="(\/assets\/[^"]+\.js)"[^>]*>/g, tag => {
         if (tag.includes('integrity=')) return tag
         const m = tag.match(/src="(\/assets\/[^"]+\.js)"/)
@@ -54,6 +54,20 @@ function securePlugin() {
         if (!hash) return tag
         return tag.replace(/>$/, ` integrity="${hash}"${xo(tag)}>`)
       })
+
+      // Convert <script type="module" ...> → <script defer ...>
+      // IIFE bundles don't use ES module semantics, so type="module" is wrong.
+      // More importantly: classic <script defer> has NO strict MIME type enforcement.
+      // The browser will execute it even if the server returns a wrong Content-Type.
+      html = html.replace(
+        /<script\b[^>]*\bsrc="(\/assets\/[^"]+\.js)"[^>]*><\/script>/g,
+        (tag) => {
+          const src       = (tag.match(/src="([^"]+)"/)       || [])[1] || ''
+          const integrity = (tag.match(/integrity="([^"]+)"/) || [])[1]
+          const iAttr     = integrity ? ` integrity="${integrity}"` : ''
+          return `<script defer src="${src}"${iAttr}></script>`
+        }
+      )
 
       // Write SRI-enhanced HTML under the non-obvious entry name
       const dest = resolve(dist, ENTRY)
@@ -260,11 +274,22 @@ export default defineConfig({
   build: {
     sourcemap: false,
     minify: 'oxc',
+    modulePreload: false, // disabled — we use classic IIFE, not ES modules
     rollupOptions: {
       output: {
-        entryFileNames: 'assets/[hash].js',
-        chunkFileNames: 'assets/[hash].js',
-        assetFileNames: 'assets/[hash].[ext]',
+        // IIFE = classic <script> tag, NO type="module"
+        // Classic scripts have NO strict MIME type enforcement.
+        // Browsers execute them even if the server returns wrong Content-Type.
+        format: 'iife',
+        name: 'App',
+        // Readable prefix + hash — pure-hash names can trigger server-side
+        // security scanners (Imunify360 etc.) that flag them as obfuscated malware
+        entryFileNames: 'assets/app-[hash].js',
+        chunkFileNames: 'assets/app-[hash].js',
+        assetFileNames: (info) => {
+          if (/\.(css)$/.test(info.names?.[0] ?? '')) return 'assets/style-[hash].[ext]'
+          return 'assets/[hash].[ext]'
+        },
       },
     },
   },
