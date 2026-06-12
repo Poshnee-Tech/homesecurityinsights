@@ -1,0 +1,97 @@
+# ============================================================
+#  Home Security Insights — Apache Security Config
+# ============================================================
+
+Options -Indexes -ExecCGI
+ServerSignature Off
+
+# ── SPA routing (React Router) ────────────────────────────
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+
+  # Block hidden files/dirs (except .well-known)
+  RewriteRule "(^|/)\." - [F,L]
+
+  # Pass through real files and directories
+  RewriteCond %{REQUEST_FILENAME} -f [OR]
+  RewriteCond %{REQUEST_FILENAME} -d
+  RewriteRule ^ - [L]
+
+  # Everything else → index.html
+  RewriteRule ^ index.html [L]
+</IfModule>
+
+# ── Security headers ──────────────────────────────────────
+<IfModule mod_headers.c>
+  # Prevent clickjacking
+  Header always set X-Frame-Options "SAMEORIGIN"
+
+  # Stop MIME-type sniffing
+  Header always set X-Content-Type-Options "nosniff"
+
+  # XSS filter (legacy browsers)
+  Header always set X-XSS-Protection "1; mode=block"
+
+  # Referrer policy
+  Header always set Referrer-Policy "strict-origin-when-cross-origin"
+
+  # Permissions policy — disable unused browser features
+  Header always set Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()"
+
+  # Content Security Policy
+  Header always set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://images.unsplash.com; connect-src 'self'; frame-ancestors 'self';"
+
+  # HSTS — only enable once SSL is confirmed working
+  # Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
+
+  # Remove server fingerprinting headers
+  Header unset X-Powered-By
+  Header unset Server
+</IfModule>
+
+# ── Block common malware/attack patterns ─────────────────
+<IfModule mod_rewrite.c>
+  RewriteCond %{QUERY_STRING} (base64_encode|eval\(|GLOBALS|_REQUEST) [NC,OR]
+  RewriteCond %{QUERY_STRING} (<script|%3Cscript|javascript:) [NC,OR]
+  RewriteCond %{QUERY_STRING} (\.\./|%2e%2e%2f|%252e%252e) [NC,OR]
+  RewriteCond %{QUERY_STRING} (union.*select|insert.*into|drop.*table) [NC]
+  RewriteRule .* - [F,L]
+
+  # Block common PHP/WordPress exploit probes
+  RewriteRule (wp-login|xmlrpc|\.php$|\.env$|\.git|\.htaccess) - [F,L]
+</IfModule>
+
+# ── Block sensitive file access ───────────────────────────
+<FilesMatch "\.(env|log|sql|bak|conf|config|ini|sh|bash|py|rb|json)$">
+  Require all denied
+</FilesMatch>
+
+# ── Caching — long-lived hashed assets, no-cache for HTML ─
+<IfModule mod_expires.c>
+  ExpiresActive On
+
+  # Versioned assets (hash in filename) — 1 year
+  <FilesMatch "\.[0-9a-f]{8,}\.(js|css)$">
+    ExpiresDefault "access plus 1 year"
+    Header set Cache-Control "public, max-age=31536000, immutable"
+  </FilesMatch>
+
+  # SVG / images — 30 days
+  <FilesMatch "\.(svg|png|jpg|jpeg|gif|webp|ico)$">
+    ExpiresDefault "access plus 30 days"
+    Header set Cache-Control "public, max-age=2592000"
+  </FilesMatch>
+
+  # HTML — always revalidate
+  <FilesMatch "\.html$">
+    ExpiresDefault "access plus 0 seconds"
+    Header set Cache-Control "no-cache, no-store, must-revalidate"
+    Header set Pragma "no-cache"
+  </FilesMatch>
+</IfModule>
+
+# ── Compression ───────────────────────────────────────────
+<IfModule mod_deflate.c>
+  AddOutputFilterByType DEFLATE text/html text/css application/javascript application/json image/svg+xml
+</IfModule>
